@@ -1,0 +1,1 @@
+Files and code for analysis of Variovorax paradoxus EPS transcriptomics in response to synthetic miRNAs. The experiment is detailled in the paper "Plants release miRNAs in their rhizosphere, targeting microbial genes" Middleton, et al., 2022. https://doi.org/10.1101/2022.07.26.501597 
