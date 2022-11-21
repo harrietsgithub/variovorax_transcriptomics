@@ -1,0 +1,282 @@
+Links for original code sources are indicated when needed.
+
+This code allows analysis of transcriptomics data (a table of gene counts per sample), resulting in a list of differentially expressed genes (DEGs). From these lists, volcano plots and Euler diagrams were created.
+
+### DATA PREPARATION ###
+
+```{r}
+setwd("C:/Users/harri/Desktop/vario-transcripto")
+```
+
+
+Install packages
+```{r}
+#install.packages("BiocManager")
+#BiocManager::install("DESeq2")
+```
+
+Load the library
+```{r}
+library(DESeq2)
+```
+
+Import data and sample description file (.csv)
+```{r}
+library(readr)
+
+merged_gene_abundance <- read.delim("merged_gene_abundance.tsv", row.names=1) #if doesn't work From Text (base) > change row names to First column
+sample_counts <- merged_gene_abundance
+
+info_table <- read_delim("info-table-vario.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)
+sample_info <- info_table
+
+```
+
+Convert the column from characters to factors (required by DESeq)
+```{r}
+sample_info$Type <- factor(sample_info$Type)
+```
+
+Set up the dds object
+```{r}
+sample_dds <- DESeqDataSetFromMatrix(countData = sample_counts,
+                                     colData = sample_info,
+                                     design = ~Type
+                                     )
+
+```
+
+
+### RUN DESEQ ###
+
+```{r}
+sample_dds <- DESeq(sample_dds)
+```
+
+Quality control: Principle Components Analysis w/ regularized log transformation (rlog)
+
+```{r}
+rld <- rlog(sample_dds, blind=TRUE)
+plotPCA(rld, intgroup="Type") 
+```
+
+
+Check result. Differential expression is comparing between two conditions as described in InfoTable. (miRNA VS SCRB)
+
+Start by comparing at 20 min
+```{r}
+sample_res <- results(sample_dds, contrast = c("Type", "mir-20", "scrb-20")) #last charact vect = base level
+summary(sample_res)
+```
+
+Save the results to a table
+```{r}
+res <- data.frame(sample_res)
+res_20 <- summary(res)
+
+library(readxl)
+annotations <- read_excel("C:/Users/harri/Desktop/resultats_bruts_transcripto/variovorax/export/annotations.xlsx")
+res_gene <- merge(x=res, y=annotations, by.x=0, by.y="gene_id")
+
+write.csv(res, "DESeq-results-20min-vario.csv")
+write.table(res, "DESeq-results-20min-vario.txt")
+```
+
+Filtering to find significant genes using FDR cutoff of 0.05
+```{r}
+padj.cutoff <- 0.05 # False Discovery Rate cutoff
+significant_results <- res_gene[which(res_gene$padj < padj.cutoff),]
+```
+
+Save results using customized file_name
+```{r}
+write.table(significant_results, "sign-pajd-20min-vario-bis.txt")
+write.csv(significant_results, "sign-pajd-20min-vario-bis.csv")
+
+```
+
+
+Now compare at 120min
+
+```{r}
+sample_res <- results(sample_dds, contrast = c("Type", "mir-120", "scrb-120")) 
+summary(sample_res)
+```
+
+Save the results to a table
+```{r}
+res <- data.frame(sample_res)
+res_120 <- summary(res)
+
+annotations <- read_excel("~/Résultats_bruts_transcripto/variovorax/export/annotations.xlsx")
+res_gene <- merge(x=res, y=annotations, by.x=0, by.y="gene_id")
+
+
+write.csv(res, "DESeq-results-120min-test.csv")
+write.table(res, "DESeq-results-120min-test.txt")
+```
+
+Filtering to find significant genes using FDR cutoff of 0.05
+```{r}
+padj.cutoff <- 0.05 # False Discovery Rate cutoff
+significant_results <- res_gene[which(res_gene$padj < padj.cutoff),]
+```
+
+Save results using customized file_name
+```{r}
+write.table(significant_results, "sign-pajd-120min-vario.txt")
+```
+
+### Make Euler Diagram to show common differentially expressed genes (DEGs) between conditions ###
+
+```{r}
+#install.packages("eulerr")
+library(eulerr)
+```
+
+Select the DEGs result files for comparison
+
+```{r}
+File20 <- file.choose() #Select the 1st DEGs result, mir-20 vs scrb-20
+File120 <- file.choose() #Select the 1st DEGs result, mir-120 vs scrb-120
+
+DEGs_20 <- read.csv(File20, header = TRUE)
+DEGs_120 <- read.csv(File120, header = TRUE)
+
+DEGs_20 <- read.csv("C:/Users/harri/Desktop/vario-transcripto/results/DESeq-results-20min-vario.txt", sep="")
+DEGs_120 <- read.csv("C:/Users/harri/Desktop/vario-transcripto/results/DESeq-results-120min-test.txt", sep="")
+
+```
+
+
+Define a function to get significant DEGs
+```{r}
+sig_DEGs <- function(DEGs){
+  df <- data.frame(DEGs)
+  sig_gene_df = subset(df, padj < 0.05) 
+  sig_gene_df = subset(sig_gene_df, baseMean > 10)
+  sig_gene_df = subset(sig_gene_df, abs(log2FoldChange) > 1.5)
+  return(sig_gene_df$X)
+}
+
+sig_DEGs <- function(DEGs){
+  df <- data.frame(DEGs)
+  sig_gene_df = subset(df, padj < 0.05) 
+  return(sig_gene_df$X)
+}
+```
+
+Get significant DEGs
+```{r}
+A <- sig_DEGs(DEGs_20)
+B <- sig_DEGs(DEGs_120)
+```
+
+
+Get the intersection and difference of A and B
+```{r}
+AnotB <-setdiff(A, B)
+BnotA <-setdiff(B,A)
+AandB <-intersect(A, B)
+
+eulerplot <-euler(c("20min"=length(AnotB), 
+                    "120min"=length(BnotA), 
+                    "20min&120min"=length(AandB))
+                  )
+```
+
+
+# https://rdrr.io/cran/eulerr/man/plot.euler.html
+# https://cran.r-project.org/web/packages/eulerr/vignettes/gallery.html
+```{r}
+plot(eulerplot, 
+     main = "Common DEGs",
+     quantities = list(type = "counts"),
+     edges = c("blue", "red"),
+     fills = c("white", "white"),
+     lwd = 4,
+     legend = list(side = "right"))
+```
+
+ ### Volcano plots ###
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+```
+
+
+Data loading and pre-processing
+Select the DEGs result files for comparison
+```{r}
+File <- file.choose() 
+DEGs <- read.csv(File, header = TRUE)
+
+res <- data.frame(DEGs)
+res$Symbol <- res$X
+```
+
+Label genes on volcano plot
+
+Set cutoff for log2FoldChange for label
+```{r}
+FC_neg_cutoff = -1.5 # Genes with log2FoldChange less than this value will be labeled
+FC_pos_cutoff = 1.5 # Genes with log2FoldChange more than this value will be labeled
+title = "Volcano Plot DEGs 120min"
+```
+
+Label a certain sets of genes, change gene symbols based on need, in makeVolcanoPlot function
+```{r}
+makeVolcanoPlot <- function(res,FC_neg_cutoff, FC_pos_cutoff, title, geneList){
+  # Set threshold to have different color for different sets of genes
+  res <- res %>% mutate(threshold = ifelse(padj<=0.050 & abs(log2FoldChange)>=1.5,"A", ifelse(padj>0.05 & abs(log2FoldChange)<1.5, "B", "C")))
+    
+  ## Two ways to label desired genes (run only one of them)
+  # 1. Only label genes based on the cutoffs
+  res$Label <- ifelse(res$log2FoldChange < FC_neg_cutoff & res$padj < 0.05 | res$log2FoldChange > FC_pos_cutoff & res$padj < 0.05, res$Symbol, "")
+  
+  # 2. Only label genes based on pre-defined gene list (Run either cutoff or pre-defined gene list)
+  #res$Label <- ifelse(res$Symbol %in% geneList, res$Symbol, "")
+  
+  # Define plotting function, adjust parameters based on need
+  ggplot(res, aes(log2FoldChange, -log10(padj), label = Label))+
+    # Set color for different data points
+    geom_point(aes(colour = threshold), size =2, alpha = 0.4) +
+    scale_colour_manual(values = c("A"="red", "B"="grey", "C"="darkgreen"))+
+    # Avoid text overlap
+    geom_text_repel(box.padding = 0.5, max.overlaps = Inf)+
+    # Set theme of the plot
+    theme_bw()+
+    xlim(c(-5,5))+ # x-axis range, adjust based on need
+    ylim(c(0,5))+ # y-axis range,adjust based on need
+    geom_vline(xintercept = c(-1.5, 1.5), lty=2,col="black",lwd=0.6)+ # Draw horizontal dash line
+    geom_hline(yintercept = 1.301, lty=2,col="black",lwd=0.6)+ # Draw vertical dash line
+    xlab(bquote(~Log[2]~ 'fold change'))+ # x-axis label
+    ylab(bquote(~-Log[10]~ 'padj')) + # y-axis label
+    theme(axis.text = element_text(color = "black", size = 10))+ # Font type and size
+    ggtitle(title) # Add title
+}
+
+makeVolcanoPlot(res,FC_neg_cutoff, FC_pos_cutoff, title, geneList)
+```
+
+
+
+ Preview of the volcano plot, helps define some parameters quickly
+Make an enhanced version of the volcano plot (https://bioconductor.org/packages/release/bioc/vignettes/EnhancedVolcano/inst/doc/EnhancedVolcano.html)
+```{r}
+library(EnhancedVolcano)
+#BiocManager::install('EnhancedVolcano')
+EnhancedVolcano(res, lab = res$Symbol,
+                x = 'log2FoldChange', y = 'padj',
+                pCutoff = 0.05, FCcutoff = 1.5, 
+                pointSize =3, labSize = 4)
+  
+```
+
+
+
+
+
+
+
