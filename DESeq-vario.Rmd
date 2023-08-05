@@ -74,6 +74,8 @@ Save the results to a table
 res <- data.frame(sample_res)
 res_20 <- summary(res)
 
+plotMA(sample_res, ylim=c(-6,6), colSig="#d01c8b", colLine="black", cex=1)
+
 library(readxl)
 annotations <- read_excel("C:/Users/harri/Desktop/resultats_bruts_transcripto/variovorax/export/annotations.xlsx")
 res_gene <- merge(x=res, y=annotations, by.x=0, by.y="gene_id")
@@ -101,6 +103,8 @@ Now compare at 120min
 ```{r}
 sample_res <- results(sample_dds, contrast = c("Type", "mir-120", "scrb-120")) 
 summary(sample_res)
+
+plotMA(sample_res, ylim=c(-6,6), colSig="#d01c8b", colLine="black", cex=1)
 ```
 
 Save the results to a table
